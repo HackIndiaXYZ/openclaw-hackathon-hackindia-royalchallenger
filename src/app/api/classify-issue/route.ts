@@ -11,22 +11,10 @@ export async function POST(req: Request) {
       );
     }
 
-    const content: Array<Record<string, unknown>> = [];
-
-    if (imageBase64) {
-      content.push({
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: "image/jpeg",
-          data: imageBase64,
-        },
-      });
-    }
-
-    content.push({
-      type: "text",
-      text: `You are a civic issue classifier for CivicPulse AI. Analyze this issue and respond ONLY in valid JSON, no extra text:
+    const nvidiaContent: any[] = [
+      {
+        type: "text",
+        text: `You are a civic issue classifier for CivicPulse AI. Analyze this issue and respond ONLY in valid JSON, no extra text:
 {
   "category": "pothole|garbage|lighting|water|road_damage|flooding|graffiti|other",
   "severity": "low|medium|high|critical",
@@ -37,22 +25,31 @@ export async function POST(req: Request) {
   "priority_score": 1-10
 }
 Description: "${description || "See attached image"}"`,
-    });
+      },
+    ];
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    if (imageBase64) {
+      nvidiaContent.push({
+        type: "image_url",
+        image_url: {
+          url: `data:image/jpeg;base64,${imageBase64}`,
+        },
+      });
+    }
+
+    const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY!,
-        "anthropic-version": "2023-06-01",
+        Authorization: `Bearer ${process.env.ANTHROPIC_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022",
+        model: "meta/llama-3.2-90b-vision-instruct",
         max_tokens: 512,
         messages: [
           {
             role: "user",
-            content,
+            content: nvidiaContent,
           },
         ],
       }),
@@ -60,7 +57,7 @@ Description: "${description || "See attached image"}"`,
 
     if (!res.ok) {
       const error = await res.text();
-      console.error("Claude API error:", error);
+      console.error("NVIDIA API error:", error);
       return NextResponse.json(
         { error: "AI classification failed" },
         { status: 500 }
@@ -68,7 +65,7 @@ Description: "${description || "See attached image"}"`,
     }
 
     const data = await res.json();
-    const text = data.content[0].text;
+    const text = data.choices[0].message.content;
 
     // Extract JSON from response (handle potential markdown wrapping)
     const jsonMatch = text.match(/\{[\s\S]*\}/);

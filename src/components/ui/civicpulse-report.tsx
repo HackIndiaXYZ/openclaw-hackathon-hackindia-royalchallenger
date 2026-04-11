@@ -36,7 +36,7 @@ type AnalysisLine = {
   id: number;
   time: string;
   text: string;
-  type: 'info' | 'success' | 'warning' | 'error';
+  type: 'info' | 'success' | 'warning' | 'error' | 'default';
 };
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────────────────
@@ -107,11 +107,12 @@ function StepProgressBar({ current }: { current: Step }) {
 }
 
 function AIPanel({
-  lines, lat, lng, aiResult,
+  lines, lat, lng, locationName, aiResult,
 }: {
   lines: AnalysisLine[];
   lat: number | null;
   lng: number | null;
+  locationName: string | null;
   aiResult: AiResult | null;
 }) {
   const endRef = React.useRef<HTMLDivElement>(null);
@@ -143,6 +144,9 @@ function AIPanel({
           </div>
           <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 14, fontWeight: 500, color: lat ? "var(--color-text-primary)" : "var(--color-text-muted)" }}>
             {lat ? `${lat.toFixed(4)}° N, ${Math.abs(lng!).toFixed(4)}° ${lng! < 0 ? "W" : "E"}` : "Awaiting sync..."}
+          </span>
+          <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.4 }}>
+            {locationName || "Resolving location name..."}
           </span>
         </div>
 
@@ -225,6 +229,7 @@ export function CivicPulseReport() {
   const [step, setStep]           = React.useState<Step>(1);
   const [lat, setLat]             = React.useState<number | null>(null);
   const [lng, setLng]             = React.useState<number | null>(null);
+  const [locationName, setLocationName] = React.useState<string | null>(null);
   const [locLoading, setLocLoading] = React.useState(false);
   const [imageFile, setImageFile] = React.useState<File | null>(null);
   const [imagePreview, setImagePreview] = React.useState<string | null>(null);
@@ -238,13 +243,42 @@ export function CivicPulseReport() {
   const [user, setUser]           = React.useState<any>(null);
   const [termLines, setTermLines] = React.useState<AnalysisLine[]>([
     { id: 0, time: now(), text: "CivicPulse AI core initialized.", type: 'info' },
-    { id: 1, time: now(), text: "Ready for sensor and contextual data injection.", type: 'default' } as any,
+    { id: 1, time: now(), text: "Ready for sensor and contextual data injection.", type: 'default' },
   ]);
   const lineId = React.useRef(2);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   function addLine(text: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') {
     setTermLines((prev) => [...prev, { id: lineId.current++, time: now(), text, type }]);
+  }
+
+  async function resolveLocationName(latitude: number, longitude: number) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("Reverse geocoding request failed");
+      }
+
+      const data = await response.json();
+      const address = data?.address || {};
+      const compactName =
+        address?.suburb ||
+        address?.neighbourhood ||
+        address?.city_district ||
+        address?.city ||
+        address?.town ||
+        address?.village ||
+        data?.display_name?.split(",").slice(0, 3).join(", ");
+
+      const resolved = compactName || "Mapped civic zone";
+      setLocationName(resolved);
+      addLine(`Location name resolved: ${resolved}`, "success");
+    } catch {
+      const fallbackName = `Lat ${latitude.toFixed(3)}, Lng ${longitude.toFixed(3)}`;
+      setLocationName(fallbackName);
+      addLine("Unable to resolve location name from coordinates. Using coordinate label.", "warning");
+    }
   }
 
   React.useEffect(() => {
@@ -267,6 +301,7 @@ export function CivicPulseReport() {
       (pos) => {
         setLat(pos.coords.latitude);
         setLng(pos.coords.longitude);
+        void resolveLocationName(pos.coords.latitude, pos.coords.longitude);
         setLocLoading(false);
         addLine(`Coordinates locked: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`, 'success');
         setStep(2);
@@ -275,6 +310,7 @@ export function CivicPulseReport() {
         setLocLoading(false);
         addLine("Triangulation failed. Provide manual coordinates if needed.", 'warning');
         setLat(28.6139); setLng(77.2090);
+        setLocationName("New Delhi");
         setStep(2);
       }
     );
@@ -308,10 +344,11 @@ export function CivicPulseReport() {
     }
 
     try {
+      const imageMimeType = imagePreview?.split(",")[0].split(":")[1].split(";")[0] || null;
       const res = await fetch("/api/classify-issue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description, imageBase64 }),
+        body: JSON.stringify({ description, imageBase64, imageMimeType }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || "API returned an error");
@@ -319,8 +356,10 @@ export function CivicPulseReport() {
       const code = `CP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
       setIssueCode(code);
       addLine(`Classification success. Incident ${code} generated.`, 'success');
+      addLine(`Issue auto-routed to ${data.department}.`, 'info');
       setStep(3);
-    } catch {
+    } catch (error: any) {
+      addLine(`AI API unavailable (${error?.message || "unknown error"}). Applying fallback heuristic.`, 'warning');
       addLine("Inference engine overhead. Applying fallback heuristic.", 'warning');
       const mock: AiResult = { category: "pothole", severity: "high", summary: "Significant road surface degradation detected. Immediate risk to vehicle suspension components.", department: "Roads & Transit", confidence: 0.94, estimated_resolution_days: 3, priority_score: 9 };
       setAiResult(mock);
@@ -389,7 +428,7 @@ export function CivicPulseReport() {
         status: "open",
         latitude: lat || 28.6139,
         longitude: lng || 77.2090,
-        area_name: "City District",
+        area_name: locationName || "Mapped civic zone",
         image_url: finalImageUrl
       });
 
@@ -487,7 +526,7 @@ export function CivicPulseReport() {
                   <Button onClick={getLocation} disabled={locLoading} style={{ background: "linear-gradient(135deg, var(--color-accent-blue), var(--color-accent-purple))", color: "white", width: "100%", borderRadius: "9999px", padding: "16px", fontFamily: "var(--font-inter), sans-serif", fontWeight: 600, fontSize: 16, border: "none" }}>
                     {locLoading ? "Acquiring coordinates..." : "Use My Current Location"}
                   </Button>
-                  <Button onClick={() => { setLat(28.6139); setLng(77.2090); setStep(2); addLine("Manual override selected for location.", 'info'); }} variant="ghost" style={{ width: "100%", marginTop: 12, color: "var(--color-text-muted)", fontFamily: "var(--font-inter), sans-serif", fontWeight: 500, border: "none", background: "transparent" }}>
+                  <Button onClick={() => { setLat(28.6139); setLng(77.2090); setLocationName("New Delhi"); setStep(2); addLine("Manual override selected for location.", 'info'); }} variant="ghost" style={{ width: "100%", marginTop: 12, color: "var(--color-text-muted)", fontFamily: "var(--font-inter), sans-serif", fontWeight: 500, border: "none", background: "transparent" }}>
                     Set Location Manually
                   </Button>
                 </div>
@@ -572,6 +611,13 @@ export function CivicPulseReport() {
                       <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 14, color: "var(--color-text-secondary)" }}>Estimated Resolution</span>
                       <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Within {aiResult.estimated_resolution_days + 2} days</span>
                     </div>
+                    <div style={{ height: 1, background: "var(--color-border-default)", width: "100%" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+                      <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 14, color: "var(--color-text-secondary)" }}>Location</span>
+                      <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", textAlign: "right" }}>
+                        {locationName || "Mapped civic zone"} {lat && lng ? `(${lat.toFixed(4)}, ${lng.toFixed(4)})` : ""}
+                      </span>
+                    </div>
                   </div>
 
                   <div style={{ display: "flex", gap: 16 }}>
@@ -590,7 +636,7 @@ export function CivicPulseReport() {
 
           <div className="sticky top-[100px]">
             {/* AI Terminal Status Panel */}
-            <AIPanel lines={termLines} lat={lat} lng={lng} aiResult={aiResult} />
+            <AIPanel lines={termLines} lat={lat} lng={lng} locationName={locationName} aiResult={aiResult} />
           </div>
 
         </div>

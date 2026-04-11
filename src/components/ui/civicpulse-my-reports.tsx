@@ -12,6 +12,7 @@ import {
   Eye,
   Building,
   RotateCcw,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,7 +27,11 @@ type Report = {
   id: string;
   issue_code: string;
   title: string;
+  description: string;
   ai_summary: string;
+  ai_confidence: number;
+  estimated_resolution_days: number;
+  priority_score: number;
   category: string;
   severity: Severity;
   status: Status;
@@ -34,7 +39,9 @@ type Report = {
   area_name: string;
   latitude: number;
   longitude: number;
+  image_url: string;
   created_at: string;
+  updated_at: string;
 };
 
 const SEVERITY_COLOR: Record<Severity, string> = {
@@ -111,7 +118,7 @@ function Stat({ n, label, color, i }: { n: number; label: string; color: string;
 
 // ─── REPORT CARD ───────────────────────────────────────────────────────────────
 
-function Card({ r, i }: { r: Report; i: number }) {
+function Card({ r, i, onViewDetails }: { r: Report; i: number; onViewDetails: (report: Report) => void }) {
   const cat = CATEGORY_COLOR[r.category] ?? "var(--color-text-secondary)";
   const sev = SEVERITY_COLOR[r.severity];
   const currentStatus = r.status as Status;
@@ -196,6 +203,7 @@ function Card({ r, i }: { r: Report; i: number }) {
             background: "transparent", color: "var(--color-accent-blue)", border: "none",
             fontFamily: "var(--font-inter), sans-serif", fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "opacity 0.2s"
           }}
+          onClick={() => onViewDetails(r)}
           onMouseEnter={(e) => e.currentTarget.style.opacity = "0.7"}
           onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
           >
@@ -205,6 +213,127 @@ function Card({ r, i }: { r: Report; i: number }) {
 
       </div>
     </motion.article>
+  );
+}
+
+function DetailsModal({ report, onClose }: { report: Report | null; onClose: () => void }) {
+  if (!report) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(11, 20, 40, 0.45)",
+          zIndex: 3000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "24px",
+        }}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 24, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 24, scale: 0.98 }}
+          transition={{ type: "spring", stiffness: 140, damping: 20 }}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: "min(920px, 100%)",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            background: "var(--color-bg-surface)",
+            border: "1px solid var(--color-border-default)",
+            borderRadius: "20px",
+            boxShadow: "0 24px 60px rgba(11, 20, 40, 0.25)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: "1px solid var(--color-border-default)" }}>
+            <div>
+              <div style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: 12, fontWeight: 700, color: "var(--color-accent-blue)" }}>{report.issue_code}</div>
+              <h3 style={{ fontFamily: "var(--font-manrope), sans-serif", fontWeight: 800, fontSize: 26, color: "var(--color-text-primary)", marginTop: 4 }}>
+                {report.title}
+              </h3>
+            </div>
+            <button onClick={onClose} style={{ width: 38, height: 38, borderRadius: "50%", border: "1px solid var(--color-border-default)", background: "var(--color-bg-base)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <X size={18} color="var(--color-text-secondary)" />
+            </button>
+          </div>
+
+          <div style={{ padding: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+            <div style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 14 }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 6 }}>Status</div>
+              <div style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>{STATUS[report.status]?.label || report.status}</div>
+            </div>
+            <div style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 14 }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 6 }}>Severity</div>
+              <div style={{ fontWeight: 700, color: SEVERITY_COLOR[report.severity] }}>{report.severity.toUpperCase()}</div>
+            </div>
+            <div style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 14 }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 6 }}>Category</div>
+              <div style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>{report.category?.replace("_", " ") || "other"}</div>
+            </div>
+            <div style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 14 }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 6 }}>Department</div>
+              <div style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>{report.department || "Municipal Services"}</div>
+            </div>
+          </div>
+
+          <div style={{ padding: "0 24px 24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <section style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", marginBottom: 8 }}>Citizen Description</div>
+                <p style={{ color: "var(--color-text-primary)", lineHeight: 1.6, fontSize: 15 }}>{report.description || "No extra description provided."}</p>
+              </section>
+              <section style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", marginBottom: 8 }}>AI Summary</div>
+                <p style={{ color: "var(--color-text-primary)", lineHeight: 1.6, fontSize: 15 }}>{report.ai_summary || "No AI summary available."}</p>
+              </section>
+              <section style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", marginBottom: 10 }}>Location</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <MapPin size={16} color="var(--color-accent-blue)" />
+                  <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{report.area_name || "Mapped civic zone"}</span>
+                </div>
+                <div style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>
+                  Latitude: {Number(report.latitude).toFixed(6)} | Longitude: {Number(report.longitude).toFixed(6)}
+                </div>
+              </section>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <section style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", marginBottom: 8 }}>AI Scoring</div>
+                <div style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 6 }}>
+                  Confidence: {Math.round((report.ai_confidence || 0) * 100)}%
+                </div>
+                <div style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 6 }}>
+                  Priority Score: {report.priority_score ?? "N/A"}/10
+                </div>
+                <div style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>
+                  Estimated Resolution: {report.estimated_resolution_days ?? "N/A"} days
+                </div>
+              </section>
+              <section style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-muted)", marginBottom: 8 }}>Timestamps</div>
+                <div style={{ color: "var(--color-text-secondary)", fontSize: 14, marginBottom: 6 }}>Created: {new Date(report.created_at).toLocaleString()}</div>
+                <div style={{ color: "var(--color-text-secondary)", fontSize: 14 }}>Updated: {new Date(report.updated_at || report.created_at).toLocaleString()}</div>
+              </section>
+              {report.image_url && (
+                <section style={{ background: "var(--color-bg-base)", border: "1px solid var(--color-border-default)", borderRadius: 14, padding: 10 }}>
+                  <img src={report.image_url} alt="Issue evidence" style={{ width: "100%", height: "220px", objectFit: "cover", borderRadius: 10 }} />
+                </section>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -231,6 +360,7 @@ export function CivicPulseMyReports() {
   const [filter, setFilter] = React.useState("all");
   const [reports, setReports] = React.useState<Report[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [selectedReport, setSelectedReport] = React.useState<Report | null>(null);
 
   React.useEffect(() => {
     async function init() {
@@ -326,10 +456,12 @@ export function CivicPulseMyReports() {
           <AnimatePresence mode="popLayout">
             {filtered.length === 0
               ? <Empty key="empty" />
-              : filtered.map((r, i) => <Card key={r.id} r={r} i={i} />)
+              : filtered.map((r, i) => <Card key={r.id} r={r} i={i} onViewDetails={setSelectedReport} />)
             }
           </AnimatePresence>
         </div>
+
+        <DetailsModal report={selectedReport} onClose={() => setSelectedReport(null)} />
 
       </div>
     </div>

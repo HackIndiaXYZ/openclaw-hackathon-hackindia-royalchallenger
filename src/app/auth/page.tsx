@@ -1,5 +1,9 @@
 import { CivicPulseAuth } from "@/components/ui/civicpulse-auth";
 
 export default function AuthPage() {
-  return <CivicPulseAuth />;
+  return (
+    <div className="-mt-[70px]">
+      <CivicPulseAuth />
+    </div>
+  );
 }

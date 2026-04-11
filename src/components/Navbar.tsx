@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Menu, X, MapPin, User, LogOut, ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -15,10 +16,33 @@ const navLinks = [
 ];
 
 export default function Navbar() {
+  const pathname = usePathname();
+  const shouldHideNavbar = pathname === "/auth";
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
+
+  const getDisplayName = (currentUser: any) => {
+    const metadataName = currentUser?.user_metadata?.full_name || currentUser?.user_metadata?.name;
+    if (metadataName && typeof metadataName === "string") {
+      return metadataName;
+    }
+
+    const email = currentUser?.email as string | undefined;
+    if (email) {
+      const localPart = email.split("@")[0] || "Citizen";
+      return localPart
+        .split(/[._-]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+    }
+
+    return "Citizen";
+  };
+
+  const displayName = getDisplayName(user);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -54,6 +78,10 @@ export default function Navbar() {
       document.body.style.overflow = "";
     };
   }, [mobileOpen]);
+
+  if (shouldHideNavbar) {
+    return null;
+  }
 
   return (
     <>
@@ -108,7 +136,7 @@ export default function Navbar() {
                   className="flex items-center gap-2 font-body text-[13px] font-semibold text-text-primary hover:text-accent-blue transition-colors px-4 py-2.5 rounded-lg bg-bg-surface border border-border-default shadow-sm"
                 >
                   <User size={16} />
-                  <span>{user.user_metadata?.full_name || "Citizen"}</span>
+                  <span>{displayName}</span>
                   <ChevronDown size={14} className={`transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`} />
                 </button>
                 <AnimatePresence>
@@ -207,7 +235,7 @@ export default function Navbar() {
                   <>
                     <div className="flex items-center justify-center gap-3 text-text-primary mb-2 font-body font-semibold">
                       <User size={20} />
-                      {user.user_metadata?.full_name || "Citizen"}
+                      {displayName}
                     </div>
                     <Link
                       href="/my-reports"
